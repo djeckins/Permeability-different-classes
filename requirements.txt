@@ -1,0 +1,11 @@
+-e .
+streamlit
+pandas
+openpyxl
+rdkit
+torch
+torch_geometric
+numpy
+tqdm
+matplotlib
+scikit-learn
