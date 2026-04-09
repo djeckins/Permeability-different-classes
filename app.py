@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from epidermal_barrier_screen.io import parse_input
 from epidermal_barrier_screen.screen import screen_records
+from epidermal_barrier_screen.applications import APPLICATION_TYPES, predict
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -627,6 +628,16 @@ with tab_file:
         file_payload = uploaded.getvalue()
         file_name = uploaded.name
 
+# ── Application type selector ────────────────────────────────────────────────
+_, type_col, _ = st.columns([2, 3, 2])
+with type_col:
+    app_type = st.selectbox(
+        "Application Type",
+        options=APPLICATION_TYPES,
+        index=0,
+        help="Select the application type to use for screening.",
+    )
+
 # ── pH input (required) ───────────────────────────────────────────────────────
 _, ph_col, _ = st.columns([2, 3, 2])
 with ph_col:
@@ -667,7 +678,7 @@ if run:
 
     with st.spinner("Calculating descriptors and screening…"):
         records = parse_input(mode, payload, filename=fname)
-        df = screen_records(records, ph=float(ph_input))
+        df = predict(app_type, records, ph=float(ph_input))
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     total      = len(df)
