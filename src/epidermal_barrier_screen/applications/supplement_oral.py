@@ -20,6 +20,7 @@ from epidermal_barrier_screen.ionization import (
     predict_pka,
 )
 from epidermal_barrier_screen.screen import _check_pains, _check_brenk
+from epidermal_barrier_screen.permeability import compute_permeability, PERMM_COLUMNS
 
 # ---------------------------------------------------------------------------
 # Scoring configuration  —  Supplement (Oral)
@@ -316,6 +317,10 @@ def predict_supplement_oral(records: list[dict[str, Any]], ph: float = PH_SC) ->
         # ── unionized % ──────────────────────────────────────────────────────
         row["unionized"] = _compute_unionized_pct(row.get("logd"), desc.get("clogp"))
 
+        # ── Membrane permeability (pypermm) ──────────────────────────────────
+        permm = compute_permeability(smiles, ph=ph)
+        row.update(permm)
+
         # ── Legacy status columns ────────────────────────────────────────────
         row["mw_status"]            = _mw_status(desc["mw"])
         row["logd_status"]          = _logd_status(row["logd"])
@@ -378,6 +383,7 @@ def predict_supplement_oral(records: list[dict[str, Any]], ph: float = PH_SC) ->
         "unionized", "logd_method",
         "fraction_unionized", "fraction_ionized", "expected_net_charge",
         "formal_charge",
+        "logP_plasma", "logP_PAMPA", "logP_Caco2", "logP_BLM", "logP_BBB",
         "mw_status", "logd_status", "tpsa_status", "hbd_status",
         "hba_status", "rotb_status", "hac_status", "formal_charge_status",
         "ionization_status",

@@ -311,8 +311,12 @@ _DISPLAY_COLS = [
     "mw", "tpsa", "hbd", "hba", "rotb",
     "logd", "formal_charge",
     "WeightedScore",
+    "logP_plasma", "logP_PAMPA", "logP_Caco2", "logP_BLM", "logP_BBB",
     "PAINS", "Toxicity (BRENK)",
 ]
+
+# Permeability columns from pypermm (not weighted, display only)
+_PERMM_DISPLAY_COLS = ["logP_plasma", "logP_PAMPA", "logP_Caco2", "logP_BLM", "logP_BBB"]
 
 _CELL_CSS = {
     "optimal":       "background-color:#c8e6c9;color:#1b5e20",
@@ -381,6 +385,12 @@ def _style_df(df: pd.DataFrame):
     for alert_col in ("PAINS", "Toxicity (BRENK)"):
         if alert_col in df.columns:
             styler = styler.map(_alert_color, subset=[alert_col])
+
+    # Permeability columns: white text on white background
+    _permm_style = "background-color:#ffffff;color:#ffffff"
+    for pcol in _PERMM_DISPLAY_COLS:
+        if pcol in df.columns:
+            styler = styler.map(lambda _v: _permm_style, subset=[pcol])
 
     return styler
 
@@ -725,6 +735,11 @@ if run:
             "logd":             st.column_config.NumberColumn(f"LogD (pH {ph_input:.1f})"),
             "formal_charge":    st.column_config.NumberColumn("Formal Charge"),
             "WeightedScore":    st.column_config.NumberColumn("Score /100"),
+            "logP_plasma":      st.column_config.NumberColumn("logP plasma"),
+            "logP_PAMPA":       st.column_config.NumberColumn("logP PAMPA"),
+            "logP_Caco2":       st.column_config.NumberColumn("logP Caco-2"),
+            "logP_BLM":         st.column_config.NumberColumn("logP BLM"),
+            "logP_BBB":         st.column_config.NumberColumn("logP BBB"),
             "PAINS":            st.column_config.TextColumn("PAINS"),
             "Toxicity (BRENK)": st.column_config.TextColumn("Toxicity (BRENK)"),
         },
