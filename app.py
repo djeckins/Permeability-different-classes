@@ -320,6 +320,8 @@ _NUMERIC_CLASS = {
     "hbd":            "HBD_class",
     "hba":            "HBA_class",
     "rotb":           "RotB_class",
+    "logP_BLM":       "logP_BLM_class",
+    "logP_plasma":    "logP_plasma_class",
 }
 
 # Columns shown in the Streamlit results table.
@@ -386,7 +388,15 @@ def _style_df(df: pd.DataFrame):
 
     styler = df.style
 
+    # Permeability columns: neutral dark text on white background (applied first
+    # so that class-based coloring can override for scored columns like logP_BLM)
+    _permm_style = "background-color:#ffffff;color:#1a1a2e"
+    for pcol in _PERMM_DISPLAY_COLS:
+        if pcol in df.columns:
+            styler = styler.map(lambda _v, _s=_permm_style: _s, subset=[pcol])
+
     # Colour numeric columns via their corresponding class column
+    # (overrides permm neutral style for logP_BLM / logP_plasma when scored)
     for num_col, cls_col in _NUMERIC_CLASS.items():
         if num_col in df.columns and cls_col in df.columns:
             styler = styler.apply(
@@ -404,12 +414,6 @@ def _style_df(df: pd.DataFrame):
     for alert_col in ("PAINS", "Toxicity (BRENK)"):
         if alert_col in df.columns:
             styler = styler.map(_alert_color, subset=[alert_col])
-
-    # Permeability columns: dark text on white background
-    _permm_style = "background-color:#ffffff;color:#1a1a2e"
-    for pcol in _PERMM_DISPLAY_COLS:
-        if pcol in df.columns:
-            styler = styler.map(lambda _v: _permm_style, subset=[pcol])
 
     return styler
 

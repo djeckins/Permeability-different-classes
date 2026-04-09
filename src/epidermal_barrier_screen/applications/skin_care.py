@@ -1,6 +1,9 @@
-"""Skin care prediction module.
+"""Skin care prediction module — passive skin penetration scoring.
 
-Contains the complete screening logic for skin care applications.
+Rule-based scoring system (0–100) for passive skin entry / skin delivery.
+Uses 9 criteria: MW, TPSA, HBD, HBA, RotB, FormalCharge, LogD, logP_BLM,
+logP_plasma.  PAINS and BRENK remain as separate alert flags (not scored).
+
 All criteria weights, classification thresholds, and decision rules
 can be independently modified for this application type.
 """
@@ -23,7 +26,7 @@ from epidermal_barrier_screen.screen import _check_pains, _check_brenk
 from epidermal_barrier_screen.permeability import compute_permeability, PERMM_COLUMNS
 
 # ---------------------------------------------------------------------------
-# Scoring configuration  —  Skin care
+# Scoring configuration  —  Skin care  (passive skin penetration)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -33,17 +36,18 @@ class _CriterionCfg:
 
 
 _CRITERIA: dict[str, _CriterionCfg] = {
-    "MW":                _CriterionCfg(weight=17, is_core=True),
-    "LogD":              _CriterionCfg(weight=17, is_core=True),
-    "TPSA":              _CriterionCfg(weight=14, is_core=True),
-    "FormalCharge":      _CriterionCfg(weight=14, is_core=True),
-    "UnionizedFraction": _CriterionCfg(weight=14, is_core=True),
-    "HBD":               _CriterionCfg(weight=7,  is_core=False),
-    "HBA":               _CriterionCfg(weight=7,  is_core=False),
-    "RotB":              _CriterionCfg(weight=10, is_core=False),
+    "MW":                _CriterionCfg(weight=12, is_core=True),
+    "TPSA":              _CriterionCfg(weight=16, is_core=True),
+    "HBD":               _CriterionCfg(weight=14, is_core=True),
+    "HBA":               _CriterionCfg(weight=6,  is_core=False),
+    "RotB":              _CriterionCfg(weight=5,  is_core=False),
+    "FormalCharge":      _CriterionCfg(weight=10, is_core=True),
+    "LogD":              _CriterionCfg(weight=20, is_core=True),
+    "logP_BLM":          _CriterionCfg(weight=12, is_core=True),
+    "logP_plasma":       _CriterionCfg(weight=5,  is_core=False),
 }
 
-_MAX_RAW_SCORE: float = sum(c.weight for c in _CRITERIA.values())
+_MAX_RAW_SCORE: float = sum(c.weight for c in _CRITERIA.values())  # 100
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +55,7 @@ _MAX_RAW_SCORE: float = sum(c.weight for c in _CRITERIA.values())
 # ---------------------------------------------------------------------------
 
 def _classify_mw(v: float) -> str:
+    """MW (Da): PASS ≤400, BORDERLINE 400–500, FAIL >500."""
     if v <= 400:
         return "optimal"
     if v <= 500:
@@ -58,25 +63,44 @@ def _classify_mw(v: float) -> str:
     return "poor"
 
 
-def _classify_logd(v: float | None) -> str:
-    if v is None:
-        return "poor"
-    if 1.0 <= v <= 3.5:
+def _classify_tpsa(v: float) -> str:
+    """TPSA (Å²): PASS ≤90, BORDERLINE 90–140, FAIL >140."""
+    if v <= 90:
         return "optimal"
-    if (0.5 <= v < 1.0) or (3.5 < v <= 4.5):
+    if v <= 140:
         return "acceptable"
     return "poor"
 
 
-def _classify_tpsa(v: float) -> str:
-    if v <= 90:
+def _classify_hbd(v: int) -> str:
+    """HBD: PASS ≤4, BORDERLINE 5–6, FAIL >6."""
+    if v <= 4:
         return "optimal"
-    if v <= 120:
+    if v <= 6:
+        return "acceptable"
+    return "poor"
+
+
+def _classify_hba(v: int) -> str:
+    """HBA: PASS ≤8, BORDERLINE 9–10, FAIL >10."""
+    if v <= 8:
+        return "optimal"
+    if v <= 10:
+        return "acceptable"
+    return "poor"
+
+
+def _classify_rotb(v: int) -> str:
+    """RotB: PASS ≤5, BORDERLINE 6–8, FAIL >8."""
+    if v <= 5:
+        return "optimal"
+    if v <= 8:
         return "acceptable"
     return "poor"
 
 
 def _classify_formal_charge(v: int) -> str:
+    """Formal charge: PASS 0, BORDERLINE ±1, FAIL ≥±2."""
     if v == 0:
         return "optimal"
     if abs(v) == 1:
@@ -84,36 +108,35 @@ def _classify_formal_charge(v: int) -> str:
     return "poor"
 
 
-def _classify_unionized(v: float | None) -> str:
+def _classify_logd(v: float | None) -> str:
+    """LogD: PASS 1.0–3.0, BORDERLINE 0.0–1.0 or 3.0–4.0, FAIL <0 or >4."""
     if v is None:
         return "poor"
-    if v >= 40.0:
+    if 1.0 <= v <= 3.0:
         return "optimal"
-    if v >= 10.0:
+    if (0.0 <= v < 1.0) or (3.0 < v <= 4.0):
         return "acceptable"
     return "poor"
 
 
-def _classify_hbd(v: int) -> str:
-    if v <= 2:
+def _classify_logp_blm(v: float | None) -> str:
+    """logP_BLM: PASS ≥-5.5, BORDERLINE -10.5 to -5.5, FAIL <-10.5."""
+    if v is None:
+        return "poor"
+    if v >= -5.5:
         return "optimal"
-    if v == 3:
+    if v >= -10.5:
         return "acceptable"
     return "poor"
 
 
-def _classify_hba(v: int) -> str:
-    if 2 <= v <= 8:
+def _classify_logp_plasma(v: float | None) -> str:
+    """logP_plasma: PASS ≥-6.5, BORDERLINE -11.5 to -6.5, FAIL <-11.5."""
+    if v is None:
+        return "poor"
+    if v >= -6.5:
         return "optimal"
-    if v <= 1 or (8 < v <= 10):
-        return "acceptable"
-    return "poor"
-
-
-def _classify_rotb(v: int) -> str:
-    if v <= 7:
-        return "optimal"
-    if v <= 10:
+    if v >= -11.5:
         return "acceptable"
     return "poor"
 
@@ -133,6 +156,8 @@ def _compute_unionized_pct(logd: float | None, logp: float | None) -> float | No
 
 # ---------------------------------------------------------------------------
 # Legacy per-criterion status functions (backward-compat colour-coding)
+# Thresholds mirror the new classification; terminology kept as
+# "suboptimal" so existing CSS keys in app.py continue to work.
 # ---------------------------------------------------------------------------
 
 def _mw_status(v: float) -> str:
@@ -143,36 +168,37 @@ def _mw_status(v: float) -> str:
 
 def _logd_status(v: float | None) -> str:
     if v is None:  return "poor"
-    if 1.0 <= v <= 3.5:  return "optimal"
-    if (0.5 <= v < 1.0) or (3.5 < v <= 4.5):  return "suboptimal"
+    if 1.0 <= v <= 3.0:  return "optimal"
+    if (0.0 <= v < 1.0) or (3.0 < v <= 4.0):  return "suboptimal"
     return "poor"
 
 
 def _tpsa_status(v: float) -> str:
     if v <= 90:    return "optimal"
-    if v <= 120:   return "suboptimal"
+    if v <= 140:   return "suboptimal"
     return "poor"
 
 
 def _hbd_status(v: int) -> str:
-    if v <= 2:     return "optimal"
-    if v == 3:     return "suboptimal"
+    if v <= 4:     return "optimal"
+    if v <= 6:     return "suboptimal"
     return "poor"
 
 
 def _hba_status(v: int) -> str:
-    if 2 <= v <= 8:        return "optimal"
-    if v <= 1 or v <= 10:  return "suboptimal"
-    return "poor"
-
-
-def _rotb_status(v: int) -> str:
-    if v <= 7:     return "optimal"
+    if v <= 8:     return "optimal"
     if v <= 10:    return "suboptimal"
     return "poor"
 
 
+def _rotb_status(v: int) -> str:
+    if v <= 5:     return "optimal"
+    if v <= 8:     return "suboptimal"
+    return "poor"
+
+
 def _hac_status(v: int) -> str:
+    """Informational only — not used in weighted scoring."""
     if v < 30:     return "optimal"
     if v <= 50:    return "suboptimal"
     return "poor"
@@ -191,11 +217,26 @@ def _ionization_status(pct_unionized: float | None) -> str:
     return "poor"
 
 
+def _logp_blm_status(v: float | None) -> str:
+    if v is None:  return "poor"
+    if v >= -5.5:  return "optimal"
+    if v >= -10.5: return "suboptimal"
+    return "poor"
+
+
+def _logp_plasma_status(v: float | None) -> str:
+    if v is None:  return "poor"
+    if v >= -6.5:  return "optimal"
+    if v >= -11.5: return "suboptimal"
+    return "poor"
+
+
 # ---------------------------------------------------------------------------
 # Weighted scoring helpers
 # ---------------------------------------------------------------------------
 
 def _criterion_score(cls: str, weight: float) -> float:
+    """Convert a classification to its numeric score contribution."""
     if cls == "optimal":    return weight
     if cls == "acceptable": return weight * 0.5
     return 0.0
@@ -214,6 +255,11 @@ def _count_core_poor(classes: dict[str, str]) -> int:
 
 
 def _final_decision(weighted_score: float, core_poor: int) -> str:
+    """
+    PASS        WeightedScore >= 75  AND  CorePoorCount == 0
+    BORDERLINE  55 <= score < 75  OR  (score >= 75 and CorePoorCount == 1)
+    FAIL        score < 55  OR  CorePoorCount >= 2
+    """
     if core_poor >= 2 or weighted_score < 55:
         return "FAIL"
     if weighted_score >= 75 and core_poor == 0:
@@ -226,7 +272,7 @@ def _final_decision(weighted_score: float, core_poor: int) -> str:
 # ---------------------------------------------------------------------------
 
 def predict_skin_care(records: list[dict[str, Any]], ph: float = PH_SC) -> pd.DataFrame:
-    """Screen molecules for skin care application.
+    """Screen molecules for passive skin penetration.
 
     Parameters
     ----------
@@ -258,7 +304,7 @@ def predict_skin_care(records: list[dict[str, Any]], ph: float = PH_SC) -> pd.Da
         desc = calculate(mol)
         row.update(desc)
 
-        # ── PAINS and Brenk structural alerts ────────────────────────────────
+        # ── PAINS and Brenk structural alerts (unchanged) ────────────────────
         pains_hit = _check_pains(mol)
         brenk_hit = _check_brenk(mol)
         row["PAINS"]            = f"{pains_hit} \U0001f6a9" if pains_hit else ""
@@ -321,7 +367,7 @@ def predict_skin_care(records: list[dict[str, Any]], ph: float = PH_SC) -> pd.Da
         permm = compute_permeability(smiles, ph=ph)
         row.update(permm)
 
-        # ── Legacy status columns ────────────────────────────────────────────
+        # ── Legacy status columns (backward-compat colour-coding) ────────────
         row["mw_status"]            = _mw_status(desc["mw"])
         row["logd_status"]          = _logd_status(row["logd"])
         row["tpsa_status"]          = _tpsa_status(desc["tpsa"])
@@ -331,38 +377,42 @@ def predict_skin_care(records: list[dict[str, Any]], ph: float = PH_SC) -> pd.Da
         row["hac_status"]           = _hac_status(desc["hac"])
         row["formal_charge_status"] = _charge_status(desc["formal_charge"])
         row["ionization_status"]    = _ionization_status(row["unionized"])
+        row["logP_BLM_status"]      = _logp_blm_status(row.get("logP_BLM"))
+        row["logP_plasma_status"]   = _logp_plasma_status(row.get("logP_plasma"))
 
-        # ── Classification columns ───────────────────────────────────────────
-        _u_pct = row["unionized"] if row["unionized"] is not None else row.get("fraction_unionized")
+        # ── Classification columns (optimal / acceptable / poor) ─────────────
         classes: dict[str, str] = {
             "MW":                _classify_mw(desc["mw"]),
-            "LogD":              _classify_logd(row["logd"]),
             "TPSA":              _classify_tpsa(desc["tpsa"]),
-            "FormalCharge":      _classify_formal_charge(desc["formal_charge"]),
-            "UnionizedFraction": _classify_unionized(_u_pct),
             "HBD":               _classify_hbd(desc["hbd"]),
             "HBA":               _classify_hba(desc["hba"]),
             "RotB":              _classify_rotb(desc["rotb"]),
+            "FormalCharge":      _classify_formal_charge(desc["formal_charge"]),
+            "LogD":              _classify_logd(row["logd"]),
+            "logP_BLM":          _classify_logp_blm(row.get("logP_BLM")),
+            "logP_plasma":       _classify_logp_plasma(row.get("logP_plasma")),
         }
 
         row["MW_class"]                = classes["MW"]
-        row["LogD_class"]              = classes["LogD"]
         row["TPSA_class"]              = classes["TPSA"]
-        row["FormalCharge_class"]      = classes["FormalCharge"]
-        row["UnionizedFraction_class"] = classes["UnionizedFraction"]
         row["HBD_class"]               = classes["HBD"]
         row["HBA_class"]               = classes["HBA"]
         row["RotB_class"]              = classes["RotB"]
+        row["FormalCharge_class"]       = classes["FormalCharge"]
+        row["LogD_class"]              = classes["LogD"]
+        row["logP_BLM_class"]          = classes["logP_BLM"]
+        row["logP_plasma_class"]       = classes["logP_plasma"]
 
         # ── Per-criterion score contributions ────────────────────────────────
-        row["MW_score"]                = _criterion_score(classes["MW"],               _CRITERIA["MW"].weight)
-        row["LogD_score"]              = _criterion_score(classes["LogD"],             _CRITERIA["LogD"].weight)
-        row["TPSA_score"]              = _criterion_score(classes["TPSA"],             _CRITERIA["TPSA"].weight)
-        row["FormalCharge_score"]      = _criterion_score(classes["FormalCharge"],     _CRITERIA["FormalCharge"].weight)
-        row["UnionizedFraction_score"] = _criterion_score(classes["UnionizedFraction"],_CRITERIA["UnionizedFraction"].weight)
-        row["HBD_score"]               = _criterion_score(classes["HBD"],              _CRITERIA["HBD"].weight)
-        row["HBA_score"]               = _criterion_score(classes["HBA"],              _CRITERIA["HBA"].weight)
-        row["RotB_score"]              = _criterion_score(classes["RotB"],              _CRITERIA["RotB"].weight)
+        row["MW_score"]                = _criterion_score(classes["MW"],           _CRITERIA["MW"].weight)
+        row["TPSA_score"]              = _criterion_score(classes["TPSA"],         _CRITERIA["TPSA"].weight)
+        row["HBD_score"]               = _criterion_score(classes["HBD"],          _CRITERIA["HBD"].weight)
+        row["HBA_score"]               = _criterion_score(classes["HBA"],          _CRITERIA["HBA"].weight)
+        row["RotB_score"]              = _criterion_score(classes["RotB"],         _CRITERIA["RotB"].weight)
+        row["FormalCharge_score"]       = _criterion_score(classes["FormalCharge"], _CRITERIA["FormalCharge"].weight)
+        row["LogD_score"]              = _criterion_score(classes["LogD"],         _CRITERIA["LogD"].weight)
+        row["logP_BLM_score"]          = _criterion_score(classes["logP_BLM"],     _CRITERIA["logP_BLM"].weight)
+        row["logP_plasma_score"]       = _criterion_score(classes["logP_plasma"],  _CRITERIA["logP_plasma"].weight)
 
         # ── Final weighted score and decision ────────────────────────────────
         weighted_score = _compute_weighted_score(classes)
@@ -378,23 +428,31 @@ def predict_skin_care(records: list[dict[str, Any]], ph: float = PH_SC) -> pd.Da
     col_order = [
         "name",
         "parse_status",
+        # ── Raw descriptors ──────────────────────────────────────────────────
         "mw", "tpsa", "hbd", "hba", "rotb", "hac",
         "predicted_pka", "ionization_class", "clogp", "logd",
         "unionized", "logd_method",
         "fraction_unionized", "fraction_ionized", "expected_net_charge",
         "formal_charge",
+        # ── Permeability (pypermm) ───────────────────────────────────────────
         "logP_plasma", "logP_PAMPA", "logP_Caco2", "logP_BLM", "logP_BBB",
+        # ── Legacy status columns ────────────────────────────────────────────
         "mw_status", "logd_status", "tpsa_status", "hbd_status",
         "hba_status", "rotb_status", "hac_status", "formal_charge_status",
-        "ionization_status",
-        "MW_class", "LogD_class", "TPSA_class",
-        "FormalCharge_class", "UnionizedFraction_class",
-        "HBD_class", "HBA_class", "RotB_class",
-        "MW_score", "LogD_score", "TPSA_score",
-        "FormalCharge_score", "UnionizedFraction_score",
-        "HBD_score", "HBA_score", "RotB_score",
+        "ionization_status", "logP_BLM_status", "logP_plasma_status",
+        # ── Classification columns ───────────────────────────────────────────
+        "MW_class", "TPSA_class", "HBD_class", "HBA_class", "RotB_class",
+        "FormalCharge_class", "LogD_class",
+        "logP_BLM_class", "logP_plasma_class",
+        # ── Per-criterion score contributions ────────────────────────────────
+        "MW_score", "TPSA_score", "HBD_score", "HBA_score", "RotB_score",
+        "FormalCharge_score", "LogD_score",
+        "logP_BLM_score", "logP_plasma_score",
+        # ── Summary ──────────────────────────────────────────────────────────
         "WeightedScore", "CorePoorCount", "FinalDecision", "final_result",
+        # ── Structural alerts ────────────────────────────────────────────────
         "PAINS", "Toxicity (BRENK)",
+        # ── SMILES ───────────────────────────────────────────────────────────
         "input_smiles", "canonical_smiles",
     ]
 
