@@ -64,10 +64,11 @@ def compute_permeability(smiles: str, ph: float = 7.4) -> dict[str, float | None
         # Generate 3-D coordinates
         result_code = AllChem.EmbedMolecule(mol_h, AllChem.ETKDGv3())
         if result_code != 0:
-            # Retry with random coordinates
-            result_code = AllChem.EmbedMolecule(
-                mol_h, AllChem.ETKDGv3(), randomSeed=42
-            )
+            # Retry with random coordinates and fixed seed
+            params = AllChem.ETKDGv3()
+            params.randomSeed = 42
+            params.useRandomCoords = True
+            result_code = AllChem.EmbedMolecule(mol_h, params)
             if result_code != 0:
                 logger.warning("3-D embedding failed for %s", smiles)
                 return empty
