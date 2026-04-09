@@ -1,0 +1,9 @@
+git clone https://github.com/USERNAME/source-repo.git
+cd source-repo
+rm -rf .git
+git init
+git remote add origin https://github.com/USERNAME/target-repo.git
+git add .
+git commit -m "Copy files from source repo"
+git branch -M main
+git push -u origin main
