@@ -80,6 +80,25 @@ st.markdown(
         background-color: #1a3a5c !important;
         border: 1px solid #3a6a9c !important;
     }
+    /* Selectbox (dropdown) — white text on dark background */
+    .stSelectbox [data-baseweb="select"] {
+        background-color: #1a3a5c !important;
+        border: 1px solid #3a6a9c !important;
+    }
+    .stSelectbox [data-baseweb="select"] span,
+    .stSelectbox [data-baseweb="select"] div,
+    .stSelectbox [data-baseweb="select"] input {
+        color: #ffffff !important;
+    }
+    .stSelectbox svg {
+        fill: #ffffff !important;
+    }
+    /* Dropdown menu items */
+    [data-baseweb="popover"] li,
+    [data-baseweb="popover"] [role="option"],
+    [data-baseweb="popover"] [role="option"] span {
+        color: #ffffff !important;
+    }
     /* Run Screening button — force white text on all child elements */
     div[data-testid="stButton"] button[kind="primary"],
     div[data-testid="stButton"] button[kind="primary"] span,
@@ -386,8 +405,8 @@ def _style_df(df: pd.DataFrame):
         if alert_col in df.columns:
             styler = styler.map(_alert_color, subset=[alert_col])
 
-    # Permeability columns: white text on white background
-    _permm_style = "background-color:#ffffff;color:#ffffff"
+    # Permeability columns: dark text on white background
+    _permm_style = "background-color:#ffffff;color:#1a1a2e"
     for pcol in _PERMM_DISPLAY_COLS:
         if pcol in df.columns:
             styler = styler.map(lambda _v: _permm_style, subset=[pcol])
